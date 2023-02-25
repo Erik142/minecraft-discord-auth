@@ -8,15 +8,11 @@ use serenity::prelude::Context;
 use serenity::prelude::EventHandler;
 use serenity::prelude::GatewayIntents;
 use serenity::Error;
-use serenity::framework::standard::macros::group;
 
 use std::cell::RefCell;
 use std::env;
 
 use crate::bot::commands::ALL_COMMANDS;
-
-#[group]
-struct General;
 
 struct Handler;
 
@@ -26,9 +22,7 @@ pub struct Bot {
 
 impl Bot {
     pub async fn new(token: String) -> Result<Bot, Box<dyn std::error::Error>> {
-    let framework = StandardFramework::new()
-        .configure(|c| c.prefix("~")) // set the bot's prefix to "~"
-        .group(&GENERAL_GROUP);
+    let framework = StandardFramework::new();
 
     let client = Client::builder(token, GatewayIntents::empty())
             .event_handler(Handler)
