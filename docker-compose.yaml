@@ -11,7 +11,7 @@ services:
     environment:
       - POSTGRES_PASSWORD=postgres
     ports:
-      - "5433:5432"
+      - "5432:5432"
     volumes:
       - ./database/tables.sql:/docker-entrypoint-initdb.d/1-tables.sql
       - ./database/views.sql:/docker-entrypoint-initdb.d/2-views.sql
