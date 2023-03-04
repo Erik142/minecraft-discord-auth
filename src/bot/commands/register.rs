@@ -35,7 +35,7 @@ impl SlashCommand for RegisterCommand {
     async fn run(
         &self,
         ctx: &Context,
-        data: &[CommandDataOption],
+        _: &[CommandDataOption],
     ) -> Result<EmbedData, Box<dyn Error>> {
         let pool = Arc::clone(&self.db_connection_pool);
         let database = Database::new(pool).await?;
