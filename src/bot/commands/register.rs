@@ -13,13 +13,15 @@ use serenity::utils::Colour;
 
 use std::error::Error;
 
-use deadpool_postgres::Pool;
+use bb8::Pool;
+use bb8_postgres::PostgresConnectionManager;
+use tokio_postgres::NoTls;
 
 static NAME: &str = "register";
 static DESCRIPTION: &str = "Register yourself to the Minecraft server";
 
 pub struct RegisterCommand {
-    db_connection_pool: Arc<Pool>,
+    db_connection_pool: Arc<Pool<PostgresConnectionManager<NoTls>>>,
 }
 
 #[async_trait]
@@ -88,7 +90,7 @@ impl SlashCommand for RegisterCommand {
 }
 
 impl RegisterCommand {
-    pub fn new(db_connection_pool: Arc<Pool>) -> Box<dyn SlashCommand + 'static> {
+    pub fn new(db_connection_pool: Arc<Pool<PostgresConnectionManager<NoTls>>>) -> Box<dyn SlashCommand + 'static> {
         let pool = Arc::clone(&db_connection_pool);
         Box::new(RegisterCommand {
             db_connection_pool: pool,

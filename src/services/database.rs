@@ -1,6 +1,10 @@
-use deadpool_postgres::{Config, ManagerConfig, Object, Pool, PoolError, RecyclingMethod, Runtime};
+use bb8::Pool;
+use bb8_postgres::PostgresConnectionManager;
+use std::error::Error;
+use std::str::FromStr;
 use std::sync::Arc;
 use thiserror::Error;
+use tokio_postgres::Config;
 use tokio_postgres::NoTls;
 
 #[derive(Error, Debug)]
@@ -26,13 +30,14 @@ pub enum DatabaseError {
 }
 
 pub struct Database {
-    connection: Object,
+    pool: Arc<Pool<PostgresConnectionManager<NoTls>>>,
 }
 
 impl Database {
     pub async fn add_player(&self, discord_id: &str, reg_code: &str) -> Result<(), DatabaseError> {
-        let result = self
-            .connection
+        let pool = Arc::clone(&self.pool);
+        let connection = pool.get().await.unwrap();
+        let result = connection
             .execute(
                 "INSERT INTO Players(discordname, registrationcode) VALUES($1, $2)",
                 &[&discord_id, &reg_code],
@@ -57,8 +62,9 @@ impl Database {
         discord_id: &str,
         auth_request_id: &str,
     ) -> Result<(), DatabaseError> {
-        let result = self
-            .connection
+        let pool = Arc::clone(&self.pool);
+        let connection = pool.get().await.unwrap();
+        let result = connection
             .execute(
                 "INSERT INTO PlayerAuthentications(discordname, authrequestid) VALUES($1, $2)",
                 &[&discord_id, &auth_request_id],
@@ -79,8 +85,9 @@ impl Database {
     }
 
     pub async fn delete_player(&self, discord_id: &str) -> Result<(), DatabaseError> {
-        let result = self
-            .connection
+        let pool = Arc::clone(&self.pool);
+        let connection = pool.get().await.unwrap();
+        let result = connection
             .execute("DELETE FROM Players WHERE discordname=$1", &[&discord_id])
             .await;
 
@@ -95,8 +102,9 @@ impl Database {
     }
 
     pub async fn delete_player_auth(&self, discord_id: &str) -> Result<(), DatabaseError> {
-        let result = self
-            .connection
+        let pool = Arc::clone(&self.pool);
+        let connection = pool.get().await.unwrap();
+        let result = connection
             .execute(
                 "DELETE FROM PlayerAuthentications WHERE discordname=$1",
                 &[&discord_id],
@@ -114,8 +122,9 @@ impl Database {
     }
 
     pub async fn get_discord_id(&self, minecraft_user_id: &str) -> Result<String, DatabaseError> {
-        let row = self
-            .connection
+        let pool = Arc::clone(&self.pool);
+        let connection = pool.get().await.unwrap();
+        let row = connection
             .query_one(
                 "SELECT discordname FROM Players WHERE minecraftname=$1",
                 &[&minecraft_user_id],
@@ -150,8 +159,9 @@ impl Database {
     }
 
     pub async fn get_minecraft_user(&self, discord_id: &str) -> Result<String, DatabaseError> {
-        let row = self
-            .connection
+        let pool = Arc::clone(&self.pool);
+        let connection = pool.get().await.unwrap();
+        let row = connection
             .query_one(
                 "SELECT minecraftname FROM Players WHERE discordname=$1",
                 &[&discord_id],
@@ -178,8 +188,9 @@ impl Database {
     }
 
     pub async fn get_reg_code(&self, discord_id: &str) -> Result<String, DatabaseError> {
-        let row = self
-            .connection
+        let pool = Arc::clone(&self.pool);
+        let connection = pool.get().await.unwrap();
+        let row = connection
             .query_one(
                 "SELECT registrationcode FROM Players WHERE discordname=$1",
                 &[&discord_id],
@@ -215,8 +226,10 @@ impl Database {
         discord_id: &str,
         ip_address: &str,
     ) -> Result<bool, DatabaseError> {
-        let row = self
-            .connection
+        let pool = Arc::clone(&self.pool);
+        let connection = pool.get().await.unwrap();
+        let row =
+            connection
             .query_one(
                 "SELECT COUNT(*) FROM AuthenticatedPlayers INNER JOIN AuthenticationRequests ON (AuthenticatedPlayers.authrequestid=AuthenticationRequests.id) WHERE AuthenticatedPlayers.discordname=$1 AND AuthenticationRequests.ipaddress=$2",
                 &[&discord_id, &ip_address],
@@ -236,8 +249,9 @@ impl Database {
     }
 
     pub async fn is_player_registered(&self, discord_id: &str) -> Result<bool, DatabaseError> {
-        let row = self
-            .connection
+        let pool = Arc::clone(&self.pool);
+        let connection = pool.get().await.unwrap();
+        let row = connection
             .query_one(
                 "SELECT COUNT(*) FROM Players WHERE discordname=$1",
                 &[&discord_id],
@@ -256,17 +270,27 @@ impl Database {
         }
     }
 
-    pub async fn new(pool: Arc<Pool>) -> Result<Database, PoolError> {
-        let connection = pool.get().await?;
-
-        Ok(Database { connection })
+    pub async fn new(
+        pool: Arc<Pool<PostgresConnectionManager<NoTls>>>,
+    ) -> Result<Database, Box<dyn Error>> {
+        Ok(Database {
+            pool: Arc::clone(&pool),
+        })
     }
 }
 
-pub fn get_connection_pool(cfg: &mut Config) -> Pool {
-    cfg.manager = Some(ManagerConfig {
-        recycling_method: RecyclingMethod::Fast,
-    });
+pub async fn get_connection_pool(
+    connection_string: &str,
+) -> Pool<PostgresConnectionManager<NoTls>> {
+    let manager = bb8_postgres::PostgresConnectionManager::new(
+        Config::from_str(connection_string).unwrap(),
+        NoTls,
+    );
+    let pool = bb8::Pool::builder()
+        .max_size(20)
+        .build(manager)
+        .await
+        .unwrap();
 
-    cfg.create_pool(Some(Runtime::Tokio1), NoTls).unwrap()
+    return pool;
 }

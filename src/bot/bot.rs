@@ -1,4 +1,3 @@
-use deadpool_postgres::Pool;
 use serenity::async_trait;
 use serenity::framework::StandardFramework;
 use serenity::model::application::interaction::{Interaction, InteractionResponseType};
@@ -11,6 +10,11 @@ use serenity::prelude::EventHandler;
 use serenity::prelude::GatewayIntents;
 use serenity::utils::Colour;
 use serenity::Error;
+
+use tokio_postgres::NoTls;
+
+use bb8::Pool;
+use bb8_postgres::PostgresConnectionManager;
 
 use std::cell::RefCell;
 use std::env;
@@ -31,7 +35,7 @@ pub struct Bot {
 impl Bot {
     pub async fn new(
         token: String,
-        db_connection_pool: Pool,
+        db_connection_pool: Pool<PostgresConnectionManager<NoTls>>,
     ) -> Result<Bot, Box<dyn std::error::Error>> {
         let pool = Arc::new(db_connection_pool);
         let framework = StandardFramework::new();
@@ -146,5 +150,7 @@ impl EventHandler for Handler {
         if let Some(version) = option_env!("CARGO_PKG_VERSION") {
             ctx.set_activity(Activity::playing(version)).await;
         }
+
+
     }
 }

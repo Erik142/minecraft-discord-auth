@@ -1,18 +1,25 @@
 pub mod bot;
 pub mod services;
 
-use services::database;
-use services::config::Config;
-use std::env;
 use dotenvy::dotenv;
+use services::database;
+use services::queue::MessageQueue;
+use std::env;
 
 #[tokio::main]
 async fn main() {
     dotenv().ok();
-    let mut cfg = Config::from_env().unwrap();
     // Login with a bot token from the environment
     let token = env::var("DISCORD_TOKEN").expect("Could not retrieve DISCORD_TOKEN");
-    let db_connection_pool = database::get_connection_pool(&mut cfg.pg);
+    let postgres_connection_string =
+        env::var("POSTGRES_URL").expect("Could not retrieve POSTGRES_URL");
+    let db_connection_pool = database::get_connection_pool(&postgres_connection_string).await;
+    tokio::spawn(async move {
+        let mut queue = MessageQueue::new(&postgres_connection_string)
+            .await
+            .unwrap();
+        queue.start().await;
+    });
     let bot = bot::bot::Bot::new(token, db_connection_pool)
         .await
         .expect("Could not create bot!");

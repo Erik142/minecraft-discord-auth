@@ -12,13 +12,15 @@ use serenity::utils::Colour;
 
 use std::error::Error;
 
-use deadpool_postgres::Pool;
+use bb8::Pool;
+use bb8_postgres::PostgresConnectionManager;
+use tokio_postgres::NoTls;
 
 static NAME: &str = "unregister";
 static DESCRIPTION: &str = "Unregister yourself from the Minecraft server";
 
 pub struct UnregisterCommand {
-    db_connection_pool: Arc<Pool>,
+    db_connection_pool: Arc<Pool<PostgresConnectionManager<NoTls>>>,
 }
 
 #[async_trait]
@@ -44,22 +46,27 @@ impl SlashCommand for UnregisterCommand {
             .is_player_registered(&discord_user.id.to_string())
             .await;
         match is_player_registered {
-            Ok(_) => {
-                match database.delete_player(&discord_user.id.to_string()).await {
-                    Ok(_) => return Ok(EmbedData {
+            Ok(_) => match database.delete_player(&discord_user.id.to_string()).await {
+                Ok(_) => {
+                    return Ok(EmbedData {
                         title: Some("Minecraft unregistration".to_string()),
-                        description: Some("You have been successfully unregistered from the Minecraft server".to_string()),
+                        description: Some(
+                            "You have been successfully unregistered from the Minecraft server"
+                                .to_string(),
+                        ),
                         colour: Some(Colour::DARK_GREEN),
-                    }),
-                    Err(e) => return Err(Box::new(e)),
+                    })
                 }
-            }
+                Err(e) => return Err(Box::new(e)),
+            },
             Err(DatabaseError::PlayerNotRegistered(_)) => {
                 return Ok(EmbedData {
-                        title: Some("Minecraft unregistration".to_string()),
-                        description: Some("You are not registered on the Minecraft server.".to_string()),
-                        colour: Some(Colour::RED),
-                    });
+                    title: Some("Minecraft unregistration".to_string()),
+                    description: Some(
+                        "You are not registered on the Minecraft server.".to_string(),
+                    ),
+                    colour: Some(Colour::RED),
+                });
             }
             Err(e) => Err(Box::new(e)),
         }
@@ -67,7 +74,9 @@ impl SlashCommand for UnregisterCommand {
 }
 
 impl UnregisterCommand {
-    pub fn new(db_connection_pool: Arc<Pool>) -> Box<dyn SlashCommand + 'static> {
+    pub fn new(
+        db_connection_pool: Arc<Pool<PostgresConnectionManager<NoTls>>>,
+    ) -> Box<dyn SlashCommand + 'static> {
         let pool = Arc::clone(&db_connection_pool);
         Box::new(UnregisterCommand {
             db_connection_pool: pool,

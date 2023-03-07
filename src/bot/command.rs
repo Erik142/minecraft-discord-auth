@@ -16,5 +16,9 @@ pub trait SlashCommand: Send + Sync {
     ) -> &'a mut CreateApplicationCommand {
         command.name(self.name()).description(self.description())
     }
-    async fn run(&self, ctx: &Context, options: &[CommandDataOption]) -> Result<EmbedData, Box<dyn Error>>;
+    async fn run(
+        &self,
+        ctx: &Context,
+        options: &[CommandDataOption],
+    ) -> Result<EmbedData, Box<dyn Error>>;
 }
