@@ -158,7 +158,7 @@ impl AuthenticationHandler {
                 if is_authenticated {
                     message_confirmation = Some(channel.send_message(http, |c| c.add_embed(|e| e.title("Minecraft login").description("You are already logged in on the Minecraft server.").color(Colour::RED))).await);
                 } else {
-                    let _ = db.delete_player_auth(&discord_user.to_string());
+                    let _ = db.delete_player_auth(&discord_user.to_string()).await;
                     let add_auth_result = db.add_player_auth(&discord_user.to_string(), &request_id).await;
 
                     if let Err(e) = add_auth_result {
