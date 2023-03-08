@@ -1,12 +1,13 @@
 use async_std::task;
 use core::time::Duration;
 use futures::channel::mpsc;
-use futures::channel::mpsc::UnboundedReceiver;
+use futures::channel::mpsc::{UnboundedReceiver, Sender};
 use futures::{stream, FutureExt, StreamExt, TryStreamExt};
 use tokio_postgres::{connect, AsyncMessage, Client, Error, NoTls};
 
 pub struct MessageQueue<'a> {
     connection_string: &'a str,
+    tx_bot: Sender<AsyncMessage>
 }
 
 impl MessageQueue<'_> {
@@ -21,10 +22,19 @@ impl MessageQueue<'_> {
             }
 
             match rx.try_next() {
-                Ok(Some(message)) => println!("GOT MESSAGE: {:?}", message),
-                Ok(None) => {
-                    println!("Updating connection!");
-                }
+                Ok(Some(AsyncMessage::Notification(message))) => {
+                    loop {
+                        match self.tx_bot.try_send(AsyncMessage::Notification(message.clone())) {
+                            Ok(()) => break,
+                            Err(e) => {
+                                println!("An error occured when forwarding message to bot: {}", e);
+                                println!("Trying again...");
+                                task::sleep(Duration::from_secs(1)).await;
+                            }
+                        }
+                    }
+                },
+                Ok(_) => (),
                 Err(_) => {
                     task::sleep(Duration::from_millis(500)).await;
                 }
@@ -32,8 +42,8 @@ impl MessageQueue<'_> {
         }
     }
 
-    pub async fn new(connection_string: &str) -> Result<MessageQueue, Error> {
-        Ok(MessageQueue { connection_string })
+    pub async fn new(connection_string: &str, tx_bot: Sender<AsyncMessage>) -> Result<MessageQueue, Error> {
+        Ok(MessageQueue { connection_string, tx_bot })
     }
 }
 

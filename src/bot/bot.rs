@@ -11,24 +11,30 @@ use serenity::prelude::GatewayIntents;
 use serenity::utils::Colour;
 use serenity::Error;
 
-use tokio_postgres::NoTls;
+use tokio::runtime::Runtime;
+use tokio_postgres::{AsyncMessage, NoTls};
 
 use bb8::Pool;
 use bb8_postgres::PostgresConnectionManager;
 
 use std::cell::RefCell;
-use std::env;
-use std::sync::Arc;
+use std::{env, thread};
+use std::sync::{Arc, Mutex};
 
 use crate::bot::command::SlashCommand;
 use crate::bot::commands;
 use crate::services::embed::EmbedData;
+
+use futures::channel::mpsc::Receiver;
+
+use super::authentication::AuthenticationHandler;
 
 struct Handler {
     commands: Vec<Arc<Box<dyn SlashCommand + 'static>>>,
 }
 
 pub struct Bot {
+    authentication_handler: Arc<Mutex<AuthenticationHandler>>,
     client: RefCell<Client>,
 }
 
@@ -36,6 +42,7 @@ impl Bot {
     pub async fn new(
         token: String,
         db_connection_pool: Pool<PostgresConnectionManager<NoTls>>,
+        queue_receiver: Receiver<AsyncMessage>,
     ) -> Result<Bot, Box<dyn std::error::Error>> {
         let pool = Arc::new(db_connection_pool);
         let framework = StandardFramework::new();
@@ -50,12 +57,25 @@ impl Bot {
 
         let bot = Bot {
             client: RefCell::new(client),
+            authentication_handler: Arc::new(Mutex::new(AuthenticationHandler::new(Arc::clone(&pool), queue_receiver)))
         };
 
         Ok(bot)
     }
 
     pub async fn start(&self) -> Result<(), Error> {
+        let cache_http = Arc::clone(&self.client.borrow().cache_and_http);
+        let auth_handler = Arc::clone(&self.authentication_handler.clone());
+
+        thread::spawn(move || {
+            let rt = Runtime::new().unwrap();
+            loop {
+                let cache_http = Arc::clone(&cache_http.clone());
+                let auth_handler = auth_handler.lock().unwrap();
+                rt.block_on(auth_handler.handle_authentication_requests(cache_http));
+            }
+        });
+
         let mut client = self.client.borrow_mut();
         client.start().await
     }
@@ -150,7 +170,5 @@ impl EventHandler for Handler {
         if let Some(version) = option_env!("CARGO_PKG_VERSION") {
             ctx.set_activity(Activity::playing(version)).await;
         }
-
-
     }
 }

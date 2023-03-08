@@ -21,6 +21,8 @@ pub enum DatabaseError {
     MissingMinecraftId(String),
     #[error("Could not find a registration code for Discord user with the id '{0}'")]
     MissingRegistration(String),
+    #[error("Could not find an authentication request with the id '{0}'")]
+    MissingAuthenticationRequest(String),
     #[error("The Discord user with the id '{0}' has not been registered on the Minecraft server")]
     PlayerNotRegistered(String),
     #[error(
@@ -60,7 +62,7 @@ impl Database {
     pub async fn add_player_auth(
         &self,
         discord_id: &str,
-        auth_request_id: &str,
+        auth_request_id: &i32,
     ) -> Result<(), DatabaseError> {
         let pool = Arc::clone(&self.pool);
         let connection = pool.get().await.unwrap();
@@ -76,7 +78,10 @@ impl Database {
                 data: "Player authentication".to_string(),
                 why: "0 rows inserted!".to_string(),
             }),
-            Ok(_) => Ok(()),
+            Ok(r) => {
+                println!("add_player_auth: {} rows inserted!", r);
+                Ok(())
+            },
             Err(e) => Err(DatabaseError::InsertError {
                 data: "Player authentication".to_string(),
                 why: e.to_string(),
@@ -221,6 +226,83 @@ impl Database {
         }
     }
 
+    pub async fn get_authentication_request_user(
+        &self,
+        request_id: &i32,
+    ) -> Result<String, DatabaseError> {
+        let pool = Arc::clone(&self.pool);
+        let connection = pool.get().await.unwrap();
+        let row = connection
+            .query_one(
+                "SELECT minecraftname FROM AuthenticationRequests WHERE id=$1",
+                &[&request_id],
+            )
+            .await;
+
+        match row {
+            Ok(r) if r.is_empty() => Err(DatabaseError::MissingAuthenticationRequest(
+                request_id.to_string(),
+            )),
+            Ok(r) => {
+                let result: Result<Option<String>, tokio_postgres::Error> =
+                    r.try_get("minecraftname");
+
+                match result {
+                    Ok(Some(minecraft_name)) => Ok(minecraft_name),
+                    Ok(None) => Err(DatabaseError::MissingAuthenticationRequest(
+                        request_id.to_string(),
+                    )),
+                    Err(e) => Err(DatabaseError::SelectError {
+                        data: "Authentication request".to_string(),
+                        why: e.to_string(),
+                    }),
+                }
+            }
+            Err(e) => Err(DatabaseError::SelectError {
+                data: "Authentication request".to_string(),
+                why: e.to_string(),
+            }),
+        }
+    }
+
+    pub async fn get_authentication_request_ip_address(
+        &self,
+        request_id: &i32,
+    ) -> Result<String, DatabaseError> {
+        let pool = Arc::clone(&self.pool);
+        let connection = pool.get().await.unwrap();
+        let row = connection
+            .query_one(
+                "SELECT ipaddress FROM AuthenticationRequests WHERE id=$1",
+                &[&request_id],
+            )
+            .await;
+
+        match row {
+            Ok(r) if r.is_empty() => Err(DatabaseError::MissingAuthenticationRequest(
+                request_id.to_string(),
+            )),
+            Ok(r) => {
+                let result: Result<Option<String>, tokio_postgres::Error> = r.try_get("ipaddress");
+
+                match result {
+                    Ok(Some(ip_address)) => Ok(ip_address),
+                    Ok(None) => Err(DatabaseError::MissingAuthenticationRequest(
+                        request_id.to_string(),
+                    )),
+                    Err(e) => Err(DatabaseError::SelectError {
+                        data: "Authentication request".to_string(),
+                        why: e.to_string(),
+                    }),
+                }
+            }
+            Err(e) => Err(DatabaseError::SelectError {
+                data: "Authentication request".to_string(),
+                why: e.to_string(),
+            }),
+        }
+    }
+
     pub async fn is_player_authenticated(
         &self,
         discord_id: &str,
@@ -237,9 +319,7 @@ impl Database {
             .await;
 
         match row {
-            Ok(r) if r.is_empty() || r.get::<usize, i64>(0) == 0 => Err(
-                DatabaseError::PlayerNotAuthenticated(discord_id.to_string()),
-            ),
+            Ok(r) if r.is_empty() || r.get::<usize, i64>(0) == 0 => Ok(false),
             Ok(_) => Ok(true),
             Err(e) => Err(DatabaseError::SelectError {
                 data: "Discord id".to_string(),
